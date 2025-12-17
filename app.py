@@ -993,9 +993,11 @@ def main():
         except Exception as e:
             st.error(f"❌ Lỗi: {str(e)}")
 
-  
+    st.markdown(
+        """
 <footer>
- <p>© 2024 <strong>Ngô Văn Tuấn</strong><p> 
+  Tip: Nếu thầy muốn XLSX tự tô màu Top 1/2/3 hoặc tự đánh số cột theo “Câu 1..22” cố định (không phụ thuộc số câu từng phần),
+  nói tôi biết số câu mỗi phần là bao nhiêu.
 </footer>
 """,
         unsafe_allow_html=True
