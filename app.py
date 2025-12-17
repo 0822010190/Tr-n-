@@ -27,7 +27,7 @@ from openpyxl.utils import get_column_letter
 # ==================== PAGE CONFIG ====================
 
 st.set_page_config(
-    page_title="Trộn đề Word - AIOMT (XLSX)",
+    page_title="Trộn đề Word",
     page_icon="🎲",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -971,34 +971,7 @@ def main():
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
-                    st.download_button(
-                        label="📥 Tải xuống DAPAN_TONG_HOP.xlsx",
-                        data=xlsx_bytes,
-                        file_name="DAPAN_TONG_HOP.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True
-                    )
-                else:
-                    zip_bytes = create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode)
-                    st.success("✅ Hoàn tất! Đã tạo nhiều mã đề + 1 file đáp án XLSX.")
-
-                    st.download_button(
-                        label=f"📦 Tải xuống {base_name}_multi.zip",
-                        data=zip_bytes,
-                        file_name=f"{base_name}_multi.zip",
-                        mime="application/zip",
-                        use_container_width=True
-                    )
-
-        except Exception as e:
-            st.error(f"❌ Lỗi: {str(e)}")
-
-    st.markdown(
-        """
-<footer>
-  Tip: Nếu thầy muốn XLSX tự tô màu Top 1/2/3 hoặc tự đánh số cột theo “Câu 1..22” cố định (không phụ thuộc số câu từng phần),
-  nói tôi biết số câu mỗi phần là bao nhiêu.
-</footer>
+                    st.do0822010190@@</footer>
 """,
         unsafe_allow_html=True
     )
