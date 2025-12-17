@@ -686,17 +686,13 @@ def shuffle_docx(file_bytes, shuffle_mode="auto"):
 
 # ==================== CSV BẢNG TỔNG HỢP (1 FILE DUY NHẤT) ====================
 
-def build_answer_table_csv(all_versions_answers, start_code=101):
+def build_answer_table_csv(all_versions_answers, start_code=101, delimiter=";"):
     """
-    Xuất CSV dạng bảng giống Excel:
-    - 2 dòng header:
-      + dòng 1: nhóm cột (Trắc nghiệm khách quan / đúng sai / trả lời ngắn)
-      + dòng 2: Mã đề, Câu 1.., Câu 1.., Câu 1..
-    - Mỗi dòng dữ liệu: mã đề 101, 102,... + đáp án theo từng phần
+    Xuất CSV dạng bảng cho Excel VN:
+    - delimiter = ';' để Excel tự tách cột
+    - UTF-8 BOM sẽ được thêm khi ghi file (ở bước writestr)
+    """
 
-    all_versions_answers: list[list[dict]] answers_all cho từng mã đề
-      dict: {part:1/2/3, q: số câu trong phần, answer:...}
-    """
     # tìm max số câu cho từng phần
     max_p = {1: 0, 2: 0, 3: 0}
     for answers in all_versions_answers:
@@ -706,12 +702,9 @@ def build_answer_table_csv(all_versions_answers, start_code=101):
             if p in max_p and q > max_p[p]:
                 max_p[p] = q
 
-    p1 = max_p[1]
-    p2 = max_p[2]
-    p3 = max_p[3]
+    p1, p2, p3 = max_p[1], max_p[2], max_p[3]
 
-    # Header row 1 (nhóm cột)
-    # CSV không có "merge", nên ta đặt tên nhóm ở cột đầu nhóm, các cột còn lại để trống
+    # Header row 1 (nhóm cột) - CSV không merge được, nên để trống các ô còn lại
     row_group = [""]  # cột Mã đề
     row_group += ["Trắc nghiệm khách quan"] + [""] * max(0, p1 - 1)
     row_group += ["Trắc nghiệm đúng sai"] + [""] * max(0, p2 - 1)
@@ -722,6 +715,40 @@ def build_answer_table_csv(all_versions_answers, start_code=101):
     row_cols += [f"Câu {i}" for i in range(1, p1 + 1)]
     row_cols += [f"Câu {i}" for i in range(1, p2 + 1)]
     row_cols += [f"Câu {i}" for i in range(1, p3 + 1)]
+
+    def esc(v: str) -> str:
+        v = (v or "")
+        # escape dấu nháy kép nếu có
+        v = v.replace('"', '""')
+        # chỉ quote khi cần (có delimiter, xuống dòng, hoặc dấu ")
+        if (delimiter in v) or ("\n" in v) or ('"' in v):
+            return f'"{v}"'
+        return v
+
+    lines = []
+    lines.append(delimiter.join(esc(x) for x in row_group))
+    lines.append(delimiter.join(esc(x) for x in row_cols))
+
+    for idx, answers in enumerate(all_versions_answers):
+        code = start_code + idx
+
+        mp = {}
+        for r in answers:
+            p = int(r.get("part", 0) or 0)
+            q = int(r.get("q", 0) or 0)
+            mp[(p, q)] = (r.get("answer", "") or "")
+
+        row = [str(code)]
+        for q in range(1, p1 + 1):
+            row.append(mp.get((1, q), ""))
+        for q in range(1, p2 + 1):
+            row.append(mp.get((2, q), ""))
+        for q in range(1, p3 + 1):
+            row.append(mp.get((3, q), ""))
+        lines.append(delimiter.join(esc(x) for x in row))
+
+    return "\n".join(lines)
+
 
     def esc_csv_cell(v: str) -> str:
         v = (v or "")
@@ -777,7 +804,8 @@ def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode):
 
         # 1 file duy nhất: bảng đáp án
         table_csv = build_answer_table_csv(all_versions_answers, start_code=101)
-        zout.writestr("DAPAN_TONG_HOP.csv", table_csv.encode("utf-8"))
+       zout.writestr("DAPAN_TONG_HOP.csv", table_csv.encode("utf-8-sig"))  # UTF-8 BOM
+
 
     return zip_buffer.getvalue()
 
