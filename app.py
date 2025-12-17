@@ -900,11 +900,7 @@ def main():
 
     st.markdown("""
     <div class="footer">
-        <p>© 2024 <strong>Ngô Văn Tuấn</strong> - <a href="https://aiomtpremium.com" target="_blank">AIOMT Premium</a></p>
-        <p>
-           
-            <a href="https://zalo.me/0822010190" target="_blank">Zalo: 0822010190</a>
-        </p>
+        <p>© 2024 <strong>Ngô Văn Tuấn - 0822010190</strong></p>
     </div>
     """, unsafe_allow_html=True)
 
