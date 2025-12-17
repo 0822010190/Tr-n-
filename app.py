@@ -789,7 +789,7 @@ def build_answer_table_csv(all_versions_answers, start_code=101, delimiter=";"):
 
 
 def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode):
-    """Tạo ZIP chứa nhiều mã đề + 1 CSV đáp án tổng hợp dạng bảng"""
+    """Tạo ZIP chứa nhiều mã đề + 1 CSV đáp án tổng hợp dạng bảng (Excel VN)"""
     zip_buffer = io.BytesIO()
     all_versions_answers = []
 
@@ -802,13 +802,20 @@ def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode):
             filename = f"{base_name}_V{ma_de}.docx"
             zout.writestr(filename, shuffled_bytes)
 
-        # 1 file duy nhất: bảng đáp án
-        table_csv = build_answer_table_csv(all_versions_answers, start_code=101)
-       zout.writestr("DAPAN_TONG_HOP.csv", table_csv.encode("utf-8-sig"))  # UTF-8 BOM
+        # ===== GHI 1 FILE CSV DUY NHẤT (SAU VÒNG FOR) =====
+        table_csv = build_answer_table_csv(
+            all_versions_answers,
+            start_code=101,
+            delimiter=";"        # Excel VN
+        )
 
+        # UTF-8 BOM để không lỗi tiếng Việt
+        zout.writestr(
+            "DAPAN_TONG_HOP.csv",
+            table_csv.encode("utf-8-sig")
+        )
 
     return zip_buffer.getvalue()
-
 
 # ==================== GIAO DIỆN STREAMLIT ====================
 
