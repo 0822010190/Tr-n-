@@ -2,12 +2,12 @@
 Trộn Đề Word Online - AIOMT Premium
 Streamlit App - Deploy miễn phí trên Streamlit Cloud
 
-NÂNG CẤP:
-- Ghi đáp án đủ 3 phần sau khi trộn
-  + PHẦN 1 (A.B.C.D): đáp án đúng = gạch chân (underline) trong nội dung phương án
-  + PHẦN 2 (a) b) c) d)): mệnh đề gạch chân = Đ, không gạch chân = S  -> "Đ,S,Đ,S"
-  + PHẦN 3 (trả lời ngắn): lấy theo dòng "Đáp án: ..." (không có -> trống)
-- Xuất CSV đáp án theo từng mã đề
+NÂNG CẤP THEO YÊU CẦU:
+- Đáp án PHẦN 1 và PHẦN 2: xác định bằng GẠCH CHÂN (underline)
+- PHẦN 2 đúng/sai: xuất "ĐSĐS" (không dấu phẩy)
+- PHẦN 3: lấy theo dòng "Đáp án: ..."
+- Xuất 1 file đáp án duy nhất: DAPAN_TONG_HOP.csv dạng bảng (như Excel), chia 3 nhóm cột
+- Mã đề: 101, 102, ...
 """
 
 import streamlit as st
@@ -26,61 +26,33 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
-    .main-header {
-        text-align: center;
-        padding: 1rem 0;
-    }
-    .main-header h1 {
-        color: #0d9488;
-        font-size: 2.5rem;
-        margin-bottom: 0.5rem;
-    }
-    .main-header p {
-        color: #666;
-        font-size: 1rem;
-    }
+    .main-header { text-align:center; padding:1rem 0; }
+    .main-header h1 { color:#0d9488; font-size:2.5rem; margin-bottom:0.5rem; }
+    .main-header p { color:#666; font-size:1rem; }
     .stButton > button {
-        width: 100%;
-        background: linear-gradient(90deg, #0d9488, #14b8a6);
-        color: white;
-        border: none;
-        padding: 0.75rem 1.5rem;
-        font-size: 1.1rem;
-        font-weight: bold;
-        border-radius: 10px;
-        transition: all 0.3s;
+        width:100%;
+        background:linear-gradient(90deg,#0d9488,#14b8a6);
+        color:white; border:none;
+        padding:0.75rem 1.5rem;
+        font-size:1.1rem; font-weight:bold;
+        border-radius:10px;
+        transition:all 0.3s;
     }
     .stButton > button:hover {
-        background: linear-gradient(90deg, #0f766e, #0d9488);
-        box-shadow: 0 4px 15px rgba(13, 148, 136, 0.4);
-    }
-    .info-box {
-        background: #f0fdfa;
-        border: 1px solid #99f6e4;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 1rem 0;
+        background:linear-gradient(90deg,#0f766e,#0d9488);
+        box-shadow:0 4px 15px rgba(13,148,136,0.4);
     }
     .success-box {
-        background: #ecfdf5;
-        border: 1px solid #6ee7b7;
-        border-radius: 10px;
-        padding: 1rem;
-        text-align: center;
+        background:#ecfdf5;
+        border:1px solid #6ee7b7;
+        border-radius:10px;
+        padding:1rem;
+        text-align:center;
     }
-    .footer {
-        text-align: center;
-        color: #888;
-        padding: 2rem 0 1rem 0;
-        font-size: 0.85rem;
-    }
-    .footer a {
-        color: #0d9488;
-        text-decoration: none;
-    }
+    .footer { text-align:center; color:#888; padding:2rem 0 1rem 0; font-size:0.85rem; }
+    .footer a { color:#0d9488; text-decoration:none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,7 +81,6 @@ def get_text(block):
 
 
 def _run_text(run):
-    """Lấy text của 1 run"""
     texts = []
     t_nodes = run.getElementsByTagNameNS(W_NS, "t")
     for t in t_nodes:
@@ -119,7 +90,7 @@ def _run_text(run):
 
 
 def _is_label_only_text(s: str) -> bool:
-    """Loại trừ text chỉ là nhãn (A./a)/Câu x.) để tránh nhãn bị tô xanh gây nhầm"""
+    """Loại trừ text chỉ là nhãn (A./a)/Câu x.) để tránh nhầm đáp án"""
     t = (s or "").strip()
     if re.fullmatch(r'[A-D]\.', t):
         return True
@@ -142,7 +113,6 @@ def run_has_underline(run) -> bool:
     if not u_list:
         return False
     u_el = u_list[0]
-    # thuộc tính w:val có thể là "single", "double"... hoặc "none"
     val = u_el.getAttributeNS(W_NS, "val") or u_el.getAttribute("w:val") or ""
     val = (val or "").strip().lower()
     if val == "none":
@@ -153,7 +123,7 @@ def run_has_underline(run) -> bool:
 def block_has_underlined_content(block) -> bool:
     """
     Block có 'nội dung' được gạch chân không?
-    Loại trừ run chỉ chứa nhãn để tránh nhãn bị tô xanh/bold.
+    Loại trừ run chỉ chứa nhãn để tránh nhãn bị tô xanh/đậm.
     """
     r_nodes = block.getElementsByTagNameNS(W_NS, "r")
     for r in r_nodes:
@@ -376,12 +346,12 @@ def parse_questions_in_range(blocks, start, end):
     return intro, questions
 
 
-# ---------- PHẦN 1: MCQ ----------
+# ==================== PHẦN 1: MCQ ====================
 
 def shuffle_mcq_options(question_blocks):
     """
     Trộn A B C D + trả về đáp án đúng sau trộn.
-    Đáp án đúng xác định bằng: gạch chân (underline) trong NỘI DUNG phương án.
+    Đáp án đúng = phương án có gạch chân (underline) trong NỘI DUNG.
     """
     indices = []
     for i, block in enumerate(question_blocks):
@@ -392,8 +362,7 @@ def shuffle_mcq_options(question_blocks):
     if len(indices) < 2:
         return question_blocks, ""
 
-    # list[(old_letter, block, is_correct)]
-    options = []
+    options = []  # (old_letter, block, is_correct)
     correct_old = ""
     for idx in indices:
         block = question_blocks[idx]
@@ -406,7 +375,6 @@ def shuffle_mcq_options(question_blocks):
 
     shuffled = shuffle_array(options)
 
-    # new correct letter = vị trí của option đúng sau trộn
     new_correct = ""
     for new_pos, (old_letter, _, _) in enumerate(shuffled):
         if old_letter == correct_old and correct_old:
@@ -426,7 +394,6 @@ def relabel_mcq_options(question_blocks):
     """Đánh lại nhãn A B C D"""
     letters = ["A", "B", "C", "D"]
     option_blocks = []
-
     for block in question_blocks:
         text = get_text(block)
         if re.match(r'^\s*[A-D][\.\)]', text, re.IGNORECASE):
@@ -437,13 +404,13 @@ def relabel_mcq_options(question_blocks):
         update_mcq_label(block, f"{letter}.")
 
 
-# ---------- PHẦN 2: ĐÚNG/SAI ----------
+# ==================== PHẦN 2: ĐÚNG/SAI ====================
 
 def shuffle_tf_options_and_key(question_blocks):
     """
     Trộn a,b,c (giữ d cố định) và trả về:
     - new_blocks
-    - key_str: "Đ,S,Đ,S" tương ứng a,b,c,d sau trộn (Đ nếu mệnh đề có gạch chân, S nếu không)
+    - key_str: "ĐSĐS" tương ứng a,b,c,d sau trộn (Đ nếu gạch chân, S nếu không)
     """
     option_map = {}  # letter -> (idx, block, truth)
     for i, block in enumerate(question_blocks):
@@ -454,53 +421,47 @@ def shuffle_tf_options_and_key(question_blocks):
             truth = block_has_underlined_content(block)  # gạch chân = Đ
             option_map[letter] = (i, block, truth)
 
-    # nếu thiếu option thì cứ trả nguyên
     if len(option_map) < 2:
-        key = []
+        # vẫn cố tạo key theo thứ tự a,b,c,d nếu có
+        key_labels = []
         for k in ["a", "b", "c", "d"]:
             if k in option_map:
-                key.append("Đ" if option_map[k][2] else "S")
+                key_labels.append("Đ" if option_map[k][2] else "S")
             else:
-                key.append("")
-        return question_blocks, ",".join(key).strip(",")
+                key_labels.append("")
+        return question_blocks, "".join(key_labels).strip()
 
     abc = []
     for k in ["a", "b", "c"]:
         if k in option_map:
             abc.append((option_map[k][1], option_map[k][2]))
 
-    if len(abc) >= 2:
-        abc_shuffled = shuffle_array(abc)
-    else:
-        abc_shuffled = abc
+    abc_shuffled = shuffle_array(abc) if len(abc) >= 2 else abc
 
     d_block = option_map["d"][1] if "d" in option_map else None
     d_truth = option_map["d"][2] if "d" in option_map else None
 
-    # khoảng option trong question_blocks
     all_idx = [v[0] for v in option_map.values()]
     min_idx = min(all_idx)
     max_idx = max(all_idx)
+
     before = question_blocks[:min_idx]
     after = question_blocks[max_idx + 1:]
 
     middle_blocks = [b for (b, _) in abc_shuffled]
     middle_truths = [t for (_, t) in abc_shuffled]
+
     if d_block is not None:
         middle_blocks.append(d_block)
         middle_truths.append(d_truth)
 
     new_blocks = before + middle_blocks + after
 
-    # tạo key theo thứ tự a,b,c,d SAU KHI relabel
-    # (sau relabel, thứ tự blocks của option chính là a,b,c,d)
-    key_labels = []
-    for t in middle_truths:
-        key_labels.append("Đ" if t else "S")
-    # nếu thiếu đủ 4 thì pad
+    # Sau khi relabel, thứ tự option tương ứng a,b,c,d chính là thứ tự middle_blocks
+    key_labels = [("Đ" if t else "S") for t in middle_truths]
     while len(key_labels) < 4:
         key_labels.append("")
-    key_str = ",".join(key_labels[:4])
+    key_str = "".join(key_labels[:4])  # KHÔNG DẤU PHẨY
 
     return new_blocks, key_str
 
@@ -509,7 +470,6 @@ def relabel_tf_options(question_blocks):
     """Đánh lại nhãn a b c d"""
     letters = ["a", "b", "c", "d"]
     option_blocks = []
-
     for block in question_blocks:
         text = get_text(block)
         if re.match(r'^\s*[a-d]\)', text, re.IGNORECASE):
@@ -520,14 +480,10 @@ def relabel_tf_options(question_blocks):
         update_tf_label(block, f"{letter})")
 
 
-# ---------- PHẦN 3: TRẢ LỜI NGẮN ----------
+# ==================== PHẦN 3: TRẢ LỜI NGẮN ====================
 
 def extract_short_answer_from_question(question_blocks) -> str:
-    """
-    Ưu tiên:
-    - Dòng "Đáp án: ..."
-    Nếu không có -> trống
-    """
+    """Lấy theo dòng: 'Đáp án: ...' (không có thì trống)"""
     for block in question_blocks:
         txt = get_text(block)
         m = re.match(r'^\s*Đáp\s*án\s*[:\-]\s*(.+)\s*$', txt, flags=re.IGNORECASE)
@@ -536,10 +492,10 @@ def extract_short_answer_from_question(question_blocks) -> str:
     return ""
 
 
-# ---------- ĐÁNH LẠI SỐ CÂU ----------
+# ==================== ĐÁNH LẠI SỐ CÂU TRONG 1 PHẦN ====================
 
 def relabel_questions(questions):
-    """Đánh lại số câu 1, 2, 3..."""
+    """Đánh lại số câu 1, 2, 3... (mỗi phần bắt đầu lại từ 1)"""
     for i, q_blocks in enumerate(questions):
         if not q_blocks:
             continue
@@ -547,17 +503,17 @@ def relabel_questions(questions):
         update_question_label(first_block, f"Câu {i + 1}.")
 
 
-# ---------- XỬ LÝ THEO PHẦN ----------
+# ==================== XỬ LÝ THEO PHẦN ====================
 
 def process_part(blocks, start, end, part_type):
     """
-    Xử lý 1 phần và trả về:
+    Trả về:
     - result_blocks
-    - answers: list[dict] với keys: part, q, answer
+    - answers: list[dict] {part, q, answer}  (q là số câu TRONG PHẦN)
     """
     intro, questions = parse_questions_in_range(blocks, start, end)
 
-    processed = []  # list[(q_blocks, answer_for_question)]
+    processed = []  # (q_blocks, answer)
     for q in questions:
         if part_type == "PHAN1":
             new_q, correct = shuffle_mcq_options(q)
@@ -565,14 +521,14 @@ def process_part(blocks, start, end, part_type):
         elif part_type == "PHAN2":
             new_q, key_str = shuffle_tf_options_and_key(q)
             processed.append((new_q, key_str))
-        else:  # PHAN3
+        else:
             new_q = q.copy()
             ans = extract_short_answer_from_question(new_q)
             processed.append((new_q, ans))
 
     shuffled_questions = shuffle_array(processed)
 
-    # đánh lại số câu
+    # đánh lại số câu trong phần
     relabel_questions([q for q, _ in shuffled_questions])
 
     # đánh lại nhãn phương án
@@ -589,7 +545,7 @@ def process_part(blocks, start, end, part_type):
         result.extend(q)
         answers.append({
             "part": 1 if part_type == "PHAN1" else (2 if part_type == "PHAN2" else 3),
-            "q": i + 1,
+            "q": i + 1,            # số câu trong phần
             "answer": ans or ""
         })
 
@@ -597,7 +553,7 @@ def process_part(blocks, start, end, part_type):
 
 
 def process_all_as_mcq(blocks):
-    """Giữ lại mode cũ (không thu key trong mode này)."""
+    """Mode cũ (không khuyến nghị cho bảng 3 phần)"""
     intro, questions = parse_questions_in_range(blocks, 0, len(blocks))
     processed_questions = []
     for q in questions:
@@ -614,7 +570,7 @@ def process_all_as_mcq(blocks):
 
 
 def process_all_as_tf(blocks):
-    """Giữ lại mode cũ (không thu key trong mode này)."""
+    """Mode cũ (không khuyến nghị cho bảng 3 phần)"""
     intro, questions = parse_questions_in_range(blocks, 0, len(blocks))
     processed_questions = []
     for q in questions:
@@ -634,7 +590,7 @@ def shuffle_docx(file_bytes, shuffle_mode="auto"):
     """
     Trộn file DOCX, trả về:
     - shuffled_docx_bytes
-    - answers_all: list[dict] with keys: part, q, answer
+    - answers_all: list[dict] {part, q (trong phần), answer}
     """
     input_buffer = io.BytesIO(file_bytes)
 
@@ -656,7 +612,7 @@ def shuffle_docx(file_bytes, shuffle_mode="auto"):
         answers_all = []
 
         if shuffle_mode == "mcq":
-            # giữ mode cũ: không thu key (nếu cần thu cả mode mcq, báo tôi nâng tiếp)
+            # Mode này không có chia phần -> không phù hợp bảng 3 nhóm như Excel
             new_blocks = process_all_as_mcq(blocks)
 
         elif shuffle_mode == "tf":
@@ -698,7 +654,7 @@ def shuffle_docx(file_bytes, shuffle_mode="auto"):
                 answers_all.extend(key3)
                 cursor = end3
 
-            # nếu không có PHẦN nào, fallback như cũ
+            # fallback nếu không có PHẦN
             if part1_idx == -1 and part2_idx == -1 and part3_idx == -1:
                 new_blocks = process_all_as_mcq(blocks)
 
@@ -712,7 +668,6 @@ def shuffle_docx(file_bytes, shuffle_mode="auto"):
 
         for block in new_blocks:
             body.appendChild(block)
-
         for node in other_nodes:
             body.appendChild(node)
 
@@ -729,36 +684,100 @@ def shuffle_docx(file_bytes, shuffle_mode="auto"):
         return output_buffer.getvalue(), answers_all
 
 
-def build_answer_csv(answers_all, version):
+# ==================== CSV BẢNG TỔNG HỢP (1 FILE DUY NHẤT) ====================
+
+def build_answer_table_csv(all_versions_answers, start_code=101):
     """
-    CSV:
-    Version,Part,Question,Answer
-    V1,1,1,C
-    V1,2,3,"Đ,S,Đ,S"
-    V1,3,2,"x=2"
+    Xuất CSV dạng bảng giống Excel:
+    - 2 dòng header:
+      + dòng 1: nhóm cột (Trắc nghiệm khách quan / đúng sai / trả lời ngắn)
+      + dòng 2: Mã đề, Câu 1.., Câu 1.., Câu 1..
+    - Mỗi dòng dữ liệu: mã đề 101, 102,... + đáp án theo từng phần
+
+    all_versions_answers: list[list[dict]] answers_all cho từng mã đề
+      dict: {part:1/2/3, q: số câu trong phần, answer:...}
     """
-    lines = ["Version,Part,Question,Answer"]
-    for row in answers_all:
-        part = row.get("part", "")
-        q = row.get("q", "")
-        ans = (row.get("answer", "") or "").replace('"', '""')
-        lines.append(f'V{version},{part},{q},"{ans}"')
+    # tìm max số câu cho từng phần
+    max_p = {1: 0, 2: 0, 3: 0}
+    for answers in all_versions_answers:
+        for r in answers:
+            p = int(r.get("part", 0) or 0)
+            q = int(r.get("q", 0) or 0)
+            if p in max_p and q > max_p[p]:
+                max_p[p] = q
+
+    p1 = max_p[1]
+    p2 = max_p[2]
+    p3 = max_p[3]
+
+    # Header row 1 (nhóm cột)
+    # CSV không có "merge", nên ta đặt tên nhóm ở cột đầu nhóm, các cột còn lại để trống
+    row_group = [""]  # cột Mã đề
+    row_group += ["Trắc nghiệm khách quan"] + [""] * max(0, p1 - 1)
+    row_group += ["Trắc nghiệm đúng sai"] + [""] * max(0, p2 - 1)
+    row_group += ["Trắc nghiệm trả lời ngắn"] + [""] * max(0, p3 - 1)
+
+    # Header row 2
+    row_cols = ["Mã đề"]
+    row_cols += [f"Câu {i}" for i in range(1, p1 + 1)]
+    row_cols += [f"Câu {i}" for i in range(1, p2 + 1)]
+    row_cols += [f"Câu {i}" for i in range(1, p3 + 1)]
+
+    def esc_csv_cell(v: str) -> str:
+        v = (v or "")
+        v = v.replace('"', '""')
+        # luôn quote để an toàn (đặc biệt đáp án phần 3 có thể có dấu phẩy)
+        return f'"{v}"'
+
+    lines = []
+    lines.append(",".join(esc_csv_cell(x) for x in row_group))
+    lines.append(",".join(esc_csv_cell(x) for x in row_cols))
+
+    # data rows
+    for idx, answers in enumerate(all_versions_answers):
+        code = start_code + idx
+
+        # map theo (part,q) -> answer
+        mp = {}
+        for r in answers:
+            p = int(r.get("part", 0) or 0)
+            q = int(r.get("q", 0) or 0)
+            ans = (r.get("answer", "") or "")
+            mp[(p, q)] = ans
+
+        row = [str(code)]
+        # PHẦN 1
+        for q in range(1, p1 + 1):
+            row.append(mp.get((1, q), ""))
+        # PHẦN 2
+        for q in range(1, p2 + 1):
+            row.append(mp.get((2, q), ""))
+        # PHẦN 3
+        for q in range(1, p3 + 1):
+            row.append(mp.get((3, q), ""))
+
+        lines.append(",".join(esc_csv_cell(x) for x in row))
+
     return "\n".join(lines)
 
 
 def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode):
-    """Tạo ZIP chứa nhiều mã đề + CSV đáp án"""
+    """Tạo ZIP chứa nhiều mã đề + 1 CSV đáp án tổng hợp dạng bảng"""
     zip_buffer = io.BytesIO()
+    all_versions_answers = []
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zout:
         for i in range(num_versions):
             shuffled_bytes, answers_all = shuffle_docx(file_bytes, shuffle_mode)
-            v = i + 1
-            filename = f"{base_name}_V{v}.docx"
+            all_versions_answers.append(answers_all)
+
+            ma_de = 101 + i
+            filename = f"{base_name}_V{ma_de}.docx"
             zout.writestr(filename, shuffled_bytes)
 
-            csv_text = build_answer_csv(answers_all, v)
-            zout.writestr(f"{base_name}_V{v}_DAPAN.csv", csv_text)
+        # 1 file duy nhất: bảng đáp án
+        table_csv = build_answer_table_csv(all_versions_answers, start_code=101)
+        zout.writestr("DAPAN_TONG_HOP.csv", table_csv.encode("utf-8"))
 
     return zip_buffer.getvalue()
 
@@ -780,14 +799,12 @@ def main():
         - **PHẦN 1:** Trắc nghiệm (A. B. C. D.) – Trộn câu hỏi + phương án  
           ✅ Đáp án đúng: **gạch chân nội dung phương án đúng**
         - **PHẦN 2:** Đúng/Sai (a) b) c) d)) – Trộn câu hỏi + trộn a,b,c (giữ d cố định)  
-          ✅ Mệnh đề gạch chân = **Đ**, không gạch chân = **S**
+          ✅ Mệnh đề gạch chân = **Đ**, không gạch chân = **S** → xuất **ĐSĐS**
         - **PHẦN 3:** Trả lời ngắn – Chỉ trộn thứ tự câu hỏi  
           ✅ Đáp án theo dòng: **`Đáp án: ...`**
 
-        **Quy tắc:**
-        - Mỗi câu bắt đầu bằng `Câu 1.`, `Câu 2.`...
-        - Phương án MCQ: `A.` `B.` `C.` `D.` (viết hoa + dấu chấm)
-        - Phương án Đúng/Sai: `a)` `b)` `c)` `d)` (viết thường + dấu ngoặc)
+        **Lưu ý quan trọng:**
+        - Gạch chân **NỘI DUNG**, không gạch chân nhãn `A.` / `a)` để tránh nhầm.
         """)
 
     st.divider()
@@ -832,7 +849,7 @@ def main():
     with col2:
         st.markdown(f"""
         <div style="padding-top: 8px; color: #666;">
-            {"📄 Xuất 1 file Word + 1 CSV đáp án" if num_versions == 1 else f"📦 Xuất ZIP chứa {num_versions} mã đề + CSV đáp án"}
+            {"📄 Xuất 1 file Word + 1 file đáp án tổng hợp" if num_versions == 1 else f"📦 Xuất ZIP chứa {num_versions} mã đề + 1 file đáp án tổng hợp"}
         </div>
         """, unsafe_allow_html=True)
 
@@ -852,8 +869,9 @@ def main():
                     base_name = "De"
 
                 if num_versions == 1:
+                    # 1 đề: vẫn đặt mã đề = 101
                     shuffled_bytes, answers_all = shuffle_docx(file_bytes, shuffle_mode)
-                    csv_text = build_answer_csv(answers_all, 1)
+                    table_csv = build_answer_table_csv([answers_all], start_code=101)
 
                     st.markdown("""
                     <div class="success-box">
@@ -862,17 +880,17 @@ def main():
                     """, unsafe_allow_html=True)
 
                     st.download_button(
-                        label=f"📥 Tải xuống {base_name}_V1.docx",
+                        label=f"📥 Tải xuống {base_name}_V101.docx",
                         data=shuffled_bytes,
-                        file_name=f"{base_name}_V1.docx",
+                        file_name=f"{base_name}_V101.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
 
                     st.download_button(
-                        label=f"📥 Tải xuống {base_name}_V1_DAPAN.csv",
-                        data=csv_text.encode("utf-8"),
-                        file_name=f"{base_name}_V1_DAPAN.csv",
+                        label="📥 Tải xuống DAPAN_TONG_HOP.csv",
+                        data=table_csv.encode("utf-8"),
+                        file_name="DAPAN_TONG_HOP.csv",
                         mime="text/csv",
                         use_container_width=True
                     )
@@ -900,7 +918,7 @@ def main():
 
     st.markdown("""
     <div class="footer">
-        <p>© 2024 <strong>Ngô Văn Tuấn - 0822010190</strong></p>
+        <p>© 2026 <strong>Ngô Văn Tuấn</strong></p>
     </div>
     """, unsafe_allow_html=True)
 
