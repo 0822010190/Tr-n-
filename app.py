@@ -14,6 +14,7 @@ TÍNH NĂNG:
    - merge nhóm tiêu đề
    - kẻ bảng, căn giữa, freeze panes
 5) PHẦN 2 đúng/sai xuất dạng "ĐSĐS" (không dấu phẩy)
+6) Có ô nhập "Mã đề bắt đầu" (1..999). Tự tăng dần, không vượt 999.
 """
 
 import streamlit as st
@@ -81,11 +82,6 @@ st.markdown(
   color: var(--primary);
   font-size: 12px;
   margin-right: 6px;
-}
-
-.small{
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .hr{
@@ -483,7 +479,6 @@ def shuffle_mcq_options(question_blocks):
 
     new_blocks = before + [b for _, b, _ in shuffled] + after
 
-    # bỏ gạch chân sau khi đã lấy đáp án
     for _, b, _ in shuffled:
         remove_underline_in_block(b)
 
@@ -554,9 +549,8 @@ def shuffle_tf_options_and_key(question_blocks):
     key_labels = [("Đ" if t else "S") for t in middle_truths]
     while len(key_labels) < 4:
         key_labels.append("")
-    key_str = "".join(key_labels[:4])  # ĐSĐS
+    key_str = "".join(key_labels[:4])
 
-    # bỏ gạch chân sau khi đã lấy key
     for b in middle_blocks:
         remove_underline_in_block(b)
 
@@ -608,7 +602,7 @@ def process_part(blocks, start, end, part_type):
         else:
             new_q = q.copy()
             ans = extract_short_answer_from_question(new_q)
-            new_q = remove_short_answer_lines(new_q)  # xóa dòng Đáp án: ...
+            new_q = remove_short_answer_lines(new_q)
             processed.append((new_q, ans))
 
     shuffled_questions = shuffle_array(processed)
@@ -736,7 +730,7 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None, ma_de_mode="full")
 
 # ==================== XLSX ANSWER BUILDER ====================
 
-def build_answer_table_xlsx(all_versions_answers, start_code=101):
+def build_answer_table_xlsx(all_versions_answers, start_code: int):
     max_p = {1: 0, 2: 0, 3: 0}
     for answers in all_versions_answers:
         for r in answers:
@@ -867,14 +861,13 @@ def build_answer_table_xlsx(all_versions_answers, start_code=101):
     return buf.getvalue()
 
 
-def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode, ma_de_mode):
-    """ZIP: nhiều đề + 1 file DAPAN_TONG_HOP.xlsx"""
+def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode, ma_de_mode, start_code):
     zip_buffer = io.BytesIO()
     all_versions_answers = []
 
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zout:
         for i in range(num_versions):
-            ma_de = 101 + i
+            ma_de = start_code + i
             shuffled_bytes, answers_all = shuffle_docx(
                 file_bytes,
                 shuffle_mode,
@@ -886,7 +879,7 @@ def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode, ma_de
             filename = f"{base_name}_V{ma_de}.docx"
             zout.writestr(filename, shuffled_bytes)
 
-        xlsx_bytes = build_answer_table_xlsx(all_versions_answers, start_code=101)
+        xlsx_bytes = build_answer_table_xlsx(all_versions_answers, start_code=start_code)
         zout.writestr("DAPAN_TONG_HOP.xlsx", xlsx_bytes)
 
     return zip_buffer.getvalue()
@@ -902,7 +895,7 @@ def main():
   <span class="badge">Tự điền mã đề trong TextBox</span>
   <span class="badge">Xuất đáp án XLSX</span>
   <h1>🎲 Trộn đề Word (3 phần) + Bảng đáp án tổng hợp (.xlsx)</h1>
-  <p>Xuất nhiều mã đề 101, 102, ... • 1 file đáp án duy nhất Excel đẹp • Đề trộn xong không lộ đáp án</p>
+  <p>Xuất nhiều mã đề • 1 file đáp án duy nhất Excel đẹp • Đề trộn xong không lộ đáp án</p>
 </div>
 """,
         unsafe_allow_html=True
@@ -933,15 +926,26 @@ def main():
                 format_func=lambda x: "Tự động (PHẦN 1,2,3)"
             )
 
-        ma_de_mode = st.selectbox(
-            "Điền {{MA_DE}} theo",
-            options=["full", "2dau", "2cuoi"],
-            format_func=lambda x: {
-                "full": "Đầy đủ 3 số (ví dụ 101)",
-                "2dau": "2 số đầu (ví dụ 10)",
-                "2cuoi": "2 số cuối (ví dụ 01)"
-            }[x]
-        )
+        c3, c4 = st.columns(2)
+        with c3:
+            start_code = st.number_input("Mã đề bắt đầu", min_value=1, max_value=999, value=101, step=1)
+        with c4:
+            ma_de_mode = st.selectbox(
+                "Điền {{MA_DE}} theo",
+                options=["full", "2dau", "2cuoi"],
+                format_func=lambda x: {
+                    "full": "Đầy đủ 3 số (ví dụ 101)",
+                    "2dau": "2 số đầu (ví dụ 10)",
+                    "2cuoi": "2 số cuối (ví dụ 01)"
+                }[x]
+            )
+
+        # chặn vượt 999
+        if int(start_code) + int(num_versions) - 1 > 999:
+            st.error("⚠️ Mã đề vượt quá 999. Hãy giảm 'Số mã đề' hoặc tăng/giảm 'Mã đề bắt đầu'.")
+            can_run = False
+        else:
+            can_run = True
 
         st.info(
             "📌 Trong Word/TextBox:\n"
@@ -955,7 +959,7 @@ def main():
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Bước 3 — Trộn & Tải xuống")
-        run_btn = st.button("🚀 Trộn đề ngay", use_container_width=True)
+        run_btn = st.button("🚀 Trộn đề ngay", use_container_width=True, disabled=not can_run)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
@@ -974,7 +978,7 @@ def main():
         st.markdown(
             """
 - Nhiều mã đề → tải **ZIP** gồm:
-  - `..._V101.docx`, `..._V102.docx`, ...
+  - `..._V<ma_de>.docx`
   - `DAPAN_TONG_HOP.xlsx`
 """
         )
@@ -991,22 +995,25 @@ def main():
                 base_name = uploaded_file.name.rsplit(".", 1)[0]
                 base_name = re.sub(r"[^\w\s-]", "", base_name).strip() or "De"
 
-                if num_versions == 1:
-                    ma_de = 101
+                start_code_i = int(start_code)
+                num_versions_i = int(num_versions)
+
+                if num_versions_i == 1:
+                    ma_de = start_code_i
                     shuffled_bytes, answers_all = shuffle_docx(
                         file_bytes,
                         shuffle_mode,
                         ma_de=ma_de,
                         ma_de_mode=ma_de_mode
                     )
-                    xlsx_bytes = build_answer_table_xlsx([answers_all], start_code=101)
+                    xlsx_bytes = build_answer_table_xlsx([answers_all], start_code=start_code_i)
 
-                    st.success("✅ Hoàn tất! Đã tạo đề V101 và bảng đáp án XLSX.")
+                    st.success(f"✅ Hoàn tất! Đã tạo đề V{ma_de} và bảng đáp án XLSX.")
 
                     st.download_button(
-                        label=f"📥 Tải xuống {base_name}_V101.docx",
+                        label=f"📥 Tải xuống {base_name}_V{ma_de}.docx",
                         data=shuffled_bytes,
-                        file_name=f"{base_name}_V101.docx",
+                        file_name=f"{base_name}_V{ma_de}.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
@@ -1021,9 +1028,10 @@ def main():
                     zip_bytes = create_zip_multiple(
                         file_bytes,
                         base_name,
-                        num_versions,
+                        num_versions_i,
                         shuffle_mode,
-                        ma_de_mode
+                        ma_de_mode,
+                        start_code_i
                     )
 
                     st.success("✅ Hoàn tất! Đã tạo nhiều mã đề + 1 file đáp án XLSX.")
@@ -1042,7 +1050,7 @@ def main():
     st.markdown(
         """
 <footer>
-  Ngô Văn Tuấn - 0822010190
+  © 2026 Ngô Văn Tuấn - 0822010190
 </footer>
 """,
         unsafe_allow_html=True
