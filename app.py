@@ -1042,8 +1042,7 @@ def main():
     st.markdown(
         """
 <footer>
-  Nếu thầy muốn XLSX tô màu phần 1/2/3 khác nhau, hoặc cố định số cột theo đề mẫu (ví dụ P1=12, P2=4, P3=6),
-  nói tôi biết số câu mỗi phần.
+  Ngô Văn Tuấn - 0822010190
 </footer>
 """,
         unsafe_allow_html=True
