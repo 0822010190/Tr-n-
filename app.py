@@ -1,14 +1,14 @@
 """
-Trộn Đề Word Online - AIOMT Premium (Customized)
+Trộn Đề Word Online - AIOMT Premium (Customized) - XLSX OUTPUT
 Streamlit App
 
-YÊU CẦU ĐÃ ĐÁP ỨNG:
-1) {{MA_DE}} đặt trong TextBox (header/footer/document) -> tự thay mã đề 101,102,...
-2) Đáp án PHẦN 1 & 2 xác định bằng GẠCH CHÂN (underline) nhưng ĐỀ TRỘN XONG sẽ XÓA gạch chân
-3) PHẦN 3 lấy đáp án theo dòng "Đáp án: ..." nhưng ĐỀ TRỘN XONG sẽ XÓA dòng đó
-4) Xuất 1 file đáp án duy nhất dạng bảng như Excel:
-   - delimiter ';' để Excel VN tách cột
-   - UTF-8 BOM (utf-8-sig) để không lỗi tiếng Việt
+ĐÃ ĐÁP ỨNG:
+1) {{MA_DE}} trong TextBox (header/footer/document) -> tự thay 101,102,...
+2) PHẦN 1 & 2: đáp án đúng xác định bằng gạch chân (underline) nhưng ĐỀ TRỘN XONG sẽ bỏ gạch chân
+3) PHẦN 3: lấy đáp án theo dòng "Đáp án: ..." nhưng ĐỀ TRỘN XONG sẽ xóa dòng đó
+4) Xuất 1 file đáp án duy nhất dạng bảng EXCEL .XLSX:
+   - có merge tiêu đề nhóm
+   - kẻ bảng, căn giữa, freeze panes
 5) PHẦN 2 đúng/sai xuất dạng "ĐSĐS" (không dấu phẩy)
 """
 
@@ -19,11 +19,15 @@ import zipfile
 import io
 from xml.dom import minidom
 
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+
 
 # ==================== PAGE CONFIG ====================
 
 st.set_page_config(
-    page_title="Trộn đề Word",
+    page_title="Trộn đề Word - AIOMT (XLSX)",
     page_icon="🎲",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -39,7 +43,6 @@ st.markdown(
   --primary2:#14b8a6;
   --bg:#f6fbfb;
   --card:#ffffff;
-  --border:#dbeafe;
   --text:#0f172a;
   --muted:#64748b;
 }
@@ -101,19 +104,6 @@ st.markdown(
   filter: brightness(0.95);
   box-shadow: 0 10px 24px rgba(13,148,136,0.22);
 }
-
-.kpi{
-  display:flex; gap:10px; flex-wrap:wrap;
-}
-.kpi .item{
-  background: rgba(2,132,199,0.06);
-  border: 1px solid rgba(2,132,199,0.12);
-  border-radius: 12px;
-  padding: 10px 12px;
-  min-width: 160px;
-}
-.kpi .item .t{ font-size:12px; color:var(--muted); margin-bottom:4px; }
-.kpi .item .v{ font-size:16px; color:var(--text); font-weight:700; }
 
 footer{
   color: var(--muted);
@@ -200,7 +190,7 @@ def block_has_underlined_content(block) -> bool:
 
 
 def remove_underline_in_block(block):
-    """Xóa gạch chân trong 1 block để đề trộn không lộ đáp án."""
+    """Bỏ gạch chân trong 1 block để đề trộn không lộ đáp án."""
     r_nodes = block.getElementsByTagNameNS(W_NS, "r")
     for r in r_nodes:
         rPr_list = r.getElementsByTagNameNS(W_NS, "rPr")
@@ -366,7 +356,6 @@ def update_question_label(paragraph, new_label):
         if run and run.localName == "r":
             style_run_blue_bold(run)
 
-        # xóa số cũ nếu dính run sau
         for j in range(i + 1, len(t_nodes)):
             t2 = t_nodes[j]
             if not t2.firstChild or not t2.firstChild.nodeValue:
@@ -424,10 +413,9 @@ def parse_questions_in_range(blocks, start, end):
     return intro, questions
 
 
-# ==================== PLACEHOLDER MA_DE (textbox/header/footer) ====================
+# ==================== PLACEHOLDER MA_DE ====================
 
 def replace_ma_de_placeholders(xml_text: str, ma_de: int) -> str:
-    """Thay {{MA_DE}} hoặc {MA_DE} trong XML (kể cả TextBox)"""
     s = xml_text
     s = s.replace("{{MA_DE}}", str(ma_de))
     s = s.replace("{MA_DE}", str(ma_de))
@@ -446,13 +434,13 @@ def shuffle_mcq_options(question_blocks):
     if len(indices) < 2:
         return question_blocks, ""
 
-    options = []  # (old_letter, block, is_correct)
+    options = []
     correct_old = ""
     for idx in indices:
         block = question_blocks[idx]
         txt = get_text(block).strip()
         old_letter = txt[0].upper() if txt else ""
-        is_correct = block_has_underlined_content(block)  # underline = đúng
+        is_correct = block_has_underlined_content(block)
         if is_correct:
             correct_old = old_letter
         options.append((old_letter, block, is_correct))
@@ -472,7 +460,7 @@ def shuffle_mcq_options(question_blocks):
 
     new_blocks = before + [b for _, b, _ in shuffled] + after
 
-    # ✅ XÓA gạch chân trong phương án để đề trộn không lộ đáp án
+    # bỏ gạch chân sau khi đã lấy đáp án
     for _, b, _ in shuffled:
         remove_underline_in_block(b)
 
@@ -495,11 +483,7 @@ def relabel_mcq_options(question_blocks):
 # ==================== PART 2: TRUE/FALSE ====================
 
 def shuffle_tf_options_and_key(question_blocks):
-    """
-    Trộn a,b,c (giữ d) và trả key "ĐSĐS" theo a,b,c,d sau trộn.
-    Mệnh đề gạch chân = Đ, không gạch chân = S.
-    """
-    option_map = {}  # letter -> (idx, block, truth)
+    option_map = {}
     for i, block in enumerate(question_blocks):
         text = get_text(block)
         m = re.match(r'^\s*([a-d])\)', text, re.IGNORECASE)
@@ -513,7 +497,7 @@ def shuffle_tf_options_and_key(question_blocks):
         for k in ["a", "b", "c", "d"]:
             if k in option_map:
                 key_labels.append("Đ" if option_map[k][2] else "S")
-                remove_underline_in_block(option_map[k][1])  # vẫn xóa underline
+                remove_underline_in_block(option_map[k][1])
             else:
                 key_labels.append("")
         return question_blocks, "".join(key_labels).strip()
@@ -547,9 +531,9 @@ def shuffle_tf_options_and_key(question_blocks):
     key_labels = [("Đ" if t else "S") for t in middle_truths]
     while len(key_labels) < 4:
         key_labels.append("")
-    key_str = "".join(key_labels[:4])  # ✅ không dấu phẩy
+    key_str = "".join(key_labels[:4])  # ĐSĐS
 
-    # ✅ XÓA gạch chân trong mệnh đề để đề trộn không lộ đáp án
+    # bỏ gạch chân sau khi đã lấy key
     for b in middle_blocks:
         remove_underline_in_block(b)
 
@@ -580,8 +564,6 @@ def extract_short_answer_from_question(question_blocks) -> str:
     return ""
 
 
-# ==================== RELABEL QUESTIONS (within part) ====================
-
 def relabel_questions(questions):
     for i, q_blocks in enumerate(questions):
         if not q_blocks:
@@ -589,25 +571,21 @@ def relabel_questions(questions):
         update_question_label(q_blocks[0], f"Câu {i + 1}.")
 
 
-# ==================== PROCESS PART ====================
-
 def process_part(blocks, start, end, part_type):
     intro, questions = parse_questions_in_range(blocks, start, end)
-    processed = []  # (q_blocks, answer)
+    processed = []
 
     for q in questions:
         if part_type == "PHAN1":
             new_q, correct = shuffle_mcq_options(q)
             processed.append((new_q, correct))
-
         elif part_type == "PHAN2":
             new_q, key_str = shuffle_tf_options_and_key(q)
             processed.append((new_q, key_str))
-
-        else:  # PHAN3
+        else:
             new_q = q.copy()
-            ans = extract_short_answer_from_question(new_q)   # vẫn lấy đáp án
-            new_q = remove_short_answer_lines(new_q)          # ✅ xóa dòng "Đáp án: ..."
+            ans = extract_short_answer_from_question(new_q)
+            new_q = remove_short_answer_lines(new_q)  # xóa dòng Đáp án: ...
             processed.append((new_q, ans))
 
     shuffled_questions = shuffle_array(processed)
@@ -635,11 +613,6 @@ def process_part(blocks, start, end, part_type):
 
 
 def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
-    """
-    Trộn docx, trả:
-    - shuffled_docx_bytes
-    - answers_all (list dict)
-    """
     input_buffer = io.BytesIO(file_bytes)
 
     with zipfile.ZipFile(input_buffer, "r") as zin:
@@ -659,11 +632,14 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
         answers_all = []
 
         if shuffle_mode != "auto":
-            raise Exception("Bản này tối ưu theo cấu trúc 3 phần. Vui lòng chọn chế độ 'Tự động (PHẦN 1,2,3)'.")
+            raise Exception("Bản XLSX tối ưu theo cấu trúc 3 phần. Vui lòng chọn chế độ 'Tự động (PHẦN 1,2,3)'.")
 
         part1_idx = find_part_index(blocks, 1)
         part2_idx = find_part_index(blocks, 2)
         part3_idx = find_part_index(blocks, 3)
+
+        if part1_idx == -1 and part2_idx == -1 and part3_idx == -1:
+            raise Exception("Không tìm thấy 'PHẦN 1/2/3'. Hãy kiểm tra lại tiêu đề phần trong Word.")
 
         new_blocks = []
         cursor = 0
@@ -671,7 +647,6 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
         if part1_idx >= 0:
             new_blocks.extend(blocks[cursor:part1_idx + 1])
             cursor = part1_idx + 1
-
             end1 = part2_idx if part2_idx >= 0 else len(blocks)
             part1_processed, key1 = process_part(blocks, cursor, end1, "PHAN1")
             new_blocks.extend(part1_processed)
@@ -695,10 +670,6 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
             new_blocks.extend(part3_processed)
             answers_all.extend(key3)
 
-        if part1_idx == -1 and part2_idx == -1 and part3_idx == -1:
-            raise Exception("Không tìm thấy 'PHẦN 1/2/3'. Hãy kiểm tra lại tiêu đề phần trong Word.")
-
-        # giữ các node khác ngoài p/tbl
         other_nodes = []
         for child in list(body.childNodes):
             if child.nodeType == child.ELEMENT_NODE and child.localName not in ["p", "tbl"]:
@@ -712,7 +683,6 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
 
         new_xml = dom.toxml()
 
-        # ========== WRITE ZIP OUT ==========
         output_buffer = io.BytesIO()
         with zipfile.ZipFile(output_buffer, "w", zipfile.ZIP_DEFLATED) as zout:
             for item in zin.infolist():
@@ -725,7 +695,6 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
                     zout.writestr(item, xml_out.encode("utf-8"))
                     continue
 
-                # thay {{MA_DE}} trong header/footer (textbox thường nằm đây)
                 if ma_de is not None and (
                     item.filename.startswith("word/header") or
                     item.filename.startswith("word/footer")
@@ -742,16 +711,16 @@ def shuffle_docx(file_bytes, shuffle_mode="auto", ma_de=None):
         return output_buffer.getvalue(), answers_all
 
 
-# ==================== ANSWER TABLE CSV (Excel VN) ====================
+# ==================== XLSX ANSWER BUILDER ====================
 
-def build_answer_table_csv(all_versions_answers, start_code=101, delimiter=";"):
+def build_answer_table_xlsx(all_versions_answers, start_code=101):
     """
-    CSV dạng bảng (2 dòng header):
-    - dòng 1: nhóm cột (khách quan/đúng sai/trả lời ngắn)
-    - dòng 2: Mã đề, Câu 1.., Câu 1.., Câu 1..
-    delimiter=';' để Excel VN tự tách cột.
+    Tạo 1 file XLSX đẹp:
+    - Row 1: tiêu đề nhóm (merge)
+    - Row 2: tiêu đề cột
+    - Row 3..: dữ liệu theo mã đề 101,102,...
     """
-
+    # max câu từng phần
     max_p = {1: 0, 2: 0, 3: 0}
     for answers in all_versions_answers:
         for r in answers:
@@ -762,51 +731,138 @@ def build_answer_table_csv(all_versions_answers, start_code=101, delimiter=";"):
 
     p1, p2, p3 = max_p[1], max_p[2], max_p[3]
 
-    row_group = [""]
-    row_group += ["Trắc nghiệm khách quan"] + [""] * max(0, p1 - 1)
-    row_group += ["Trắc nghiệm đúng sai"] + [""] * max(0, p2 - 1)
-    row_group += ["Trắc nghiệm trả lời ngắn"] + [""] * max(0, p3 - 1)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Đáp án"
 
-    row_cols = ["Mã đề"]
-    row_cols += [f"Câu {i}" for i in range(1, p1 + 1)]
-    row_cols += [f"Câu {i}" for i in range(1, p2 + 1)]
-    row_cols += [f"Câu {i}" for i in range(1, p3 + 1)]
+    # Styles
+    header_fill = PatternFill("solid", fgColor="E6FFFA")
+    group_fill = PatternFill("solid", fgColor="CCFBF1")
+    thin = Side(style="thin", color="94A3B8")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    bold = Font(bold=True)
 
-    def esc(v: str) -> str:
-        v = (v or "")
-        v = v.replace('"', '""')
-        # quote khi có delimiter hoặc xuống dòng hoặc dấu "
-        if (delimiter in v) or ("\n" in v) or ('"' in v):
-            return f'"{v}"'
-        return v
+    # Column plan
+    # Col A: Mã đề
+    start_col = 2  # B
+    p1_start = start_col
+    p1_end = p1_start + p1 - 1
+    p2_start = p1_end + 1
+    p2_end = p2_start + p2 - 1
+    p3_start = p2_end + 1
+    p3_end = p3_start + p3 - 1
 
-    lines = []
-    lines.append(delimiter.join(esc(x) for x in row_group))
-    lines.append(delimiter.join(esc(x) for x in row_cols))
+    # Row 1 - group headers (merge)
+    ws["A1"] = ""
+    ws["A1"].fill = group_fill
+    ws["A1"].alignment = center
+    ws["A1"].border = border
 
+    if p1 > 0:
+        ws.cell(row=1, column=p1_start, value="Trắc nghiệm khách quan")
+        ws.merge_cells(start_row=1, start_column=p1_start, end_row=1, end_column=p1_end)
+    if p2 > 0:
+        ws.cell(row=1, column=p2_start, value="Trắc nghiệm đúng sai")
+        ws.merge_cells(start_row=1, start_column=p2_start, end_row=1, end_column=p2_end)
+    if p3 > 0:
+        ws.cell(row=1, column=p3_start, value="Trắc nghiệm trả lời ngắn")
+        ws.merge_cells(start_row=1, start_column=p3_start, end_row=1, end_column=p3_end)
+
+    # Apply style to row 1 range
+    last_col = max(1, p3_end if p3 > 0 else (p2_end if p2 > 0 else (p1_end if p1 > 0 else 1)))
+    for c in range(1, last_col + 1):
+        cell = ws.cell(row=1, column=c)
+        cell.fill = group_fill
+        cell.font = bold
+        cell.alignment = center
+        cell.border = border
+
+    # Row 2 - column headers
+    ws["A2"] = "Mã đề"
+    ws["A2"].fill = header_fill
+    ws["A2"].font = bold
+    ws["A2"].alignment = center
+    ws["A2"].border = border
+
+    col = start_col
+    for i in range(1, p1 + 1):
+        cell = ws.cell(row=2, column=col, value=f"Câu {i}")
+        cell.fill = header_fill
+        cell.font = bold
+        cell.alignment = center
+        cell.border = border
+        col += 1
+
+    for i in range(1, p2 + 1):
+        cell = ws.cell(row=2, column=col, value=f"Câu {i}")
+        cell.fill = header_fill
+        cell.font = bold
+        cell.alignment = center
+        cell.border = border
+        col += 1
+
+    for i in range(1, p3 + 1):
+        cell = ws.cell(row=2, column=col, value=f"Câu {i}")
+        cell.fill = header_fill
+        cell.font = bold
+        cell.alignment = center
+        cell.border = border
+        col += 1
+
+    # Data rows
     for idx, answers in enumerate(all_versions_answers):
         code = start_code + idx
-
         mp = {}
         for r in answers:
             p = int(r.get("part", 0) or 0)
             q = int(r.get("q", 0) or 0)
             mp[(p, q)] = (r.get("answer", "") or "")
 
-        row = [str(code)]
-        for q in range(1, p1 + 1):
-            row.append(mp.get((1, q), ""))
-        for q in range(1, p2 + 1):
-            row.append(mp.get((2, q), ""))
-        for q in range(1, p3 + 1):
-            row.append(mp.get((3, q), ""))
-        lines.append(delimiter.join(esc(x) for x in row))
+        rrow = 3 + idx
+        ws.cell(row=rrow, column=1, value=code).alignment = center
+        ws.cell(row=rrow, column=1).border = border
 
-    return "\n".join(lines)
+        col = start_col
+        for q in range(1, p1 + 1):
+            v = mp.get((1, q), "")
+            cell = ws.cell(row=rrow, column=col, value=v)
+            cell.alignment = center
+            cell.border = border
+            col += 1
+        for q in range(1, p2 + 1):
+            v = mp.get((2, q), "")
+            cell = ws.cell(row=rrow, column=col, value=v)
+            cell.alignment = center
+            cell.border = border
+            col += 1
+        for q in range(1, p3 + 1):
+            v = mp.get((3, q), "")
+            cell = ws.cell(row=rrow, column=col, value=v)
+            cell.alignment = center
+            cell.border = border
+            col += 1
+
+    # Column widths
+    ws.column_dimensions["A"].width = 10
+    for c in range(2, last_col + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 10
+
+    # Row heights
+    ws.row_dimensions[1].height = 22
+    ws.row_dimensions[2].height = 20
+
+    # Freeze panes (keep top 2 rows and first column)
+    ws.freeze_panes = "B3"
+
+    # Save to bytes
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
 
 
 def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode):
-    """ZIP: nhiều đề + 1 file DAPAN_TONG_HOP.csv"""
+    """ZIP: nhiều đề + 1 file DAPAN_TONG_HOP.xlsx"""
     zip_buffer = io.BytesIO()
     all_versions_answers = []
 
@@ -819,9 +875,8 @@ def create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode):
             filename = f"{base_name}_V{ma_de}.docx"
             zout.writestr(filename, shuffled_bytes)
 
-        table_csv = build_answer_table_csv(all_versions_answers, start_code=101, delimiter=";")
-        # ✅ UTF-8 BOM để Excel không lỗi tiếng Việt
-        zout.writestr("DAPAN_TONG_HOP.csv", table_csv.encode("utf-8-sig"))
+        xlsx_bytes = build_answer_table_xlsx(all_versions_answers, start_code=101)
+        zout.writestr("DAPAN_TONG_HOP.xlsx", xlsx_bytes)
 
     return zip_buffer.getvalue()
 
@@ -833,10 +888,10 @@ def main():
         """
 <div class="hero">
   <span class="badge">Giữ nguyên MathType & OLE</span>
-  <span class="badge">Đọc đáp án bằng gạch chân</span>
   <span class="badge">Tự điền {{MA_DE}} trong TextBox</span>
-  <h1>🎲 Trộn đề Word (3 phần) + Bảng đáp án tổng hợp</h1>
-  <p>Xuất nhiều mã đề 101, 102, ... • 1 file đáp án duy nhất cho Excel VN • Đề trộn xong không lộ đáp án</p>
+  <span class="badge">Xuất đáp án XLSX</span>
+  <h1>🎲 Trộn đề Word (3 phần) + Bảng đáp án tổng hợp (.xlsx)</h1>
+  <p>Xuất nhiều mã đề 101, 102, ... • 1 file đáp án duy nhất Excel đẹp • Đề trộn xong không lộ đáp án</p>
 </div>
 """,
         unsafe_allow_html=True
@@ -864,10 +919,10 @@ def main():
             shuffle_mode = st.selectbox(
                 "Chế độ",
                 options=["auto"],
-                format_func=lambda x: "Tự động (PHẦN 1,2,3)" if x == "auto" else x
+                format_func=lambda x: "Tự động (PHẦN 1,2,3)"
             )
 
-        st.info("📌 Lưu ý: Trong Word, thầy đặt **{{MA_DE}}** trong TextBox ô 'Mã đề:' để hệ thống tự điền.")
+        st.info("📌 Trong Word: đặt **{{MA_DE}}** trong TextBox ô 'Mã đề:' để hệ thống tự điền.")
 
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -875,42 +930,29 @@ def main():
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.subheader("Bước 3 — Trộn & Tải xuống")
-
         run_btn = st.button("🚀 Trộn đề ngay", use_container_width=True)
-
         st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("Quy ước thầy đang dùng")
+        st.subheader("Quy ước")
         st.markdown(
             """
-- **PHẦN 1 (A,B,C,D):** đáp án đúng **gạch chân** trong nội dung phương án  
-- **PHẦN 2 (a,b,c,d):** mệnh đề **gạch chân = Đ**, không gạch chân = **S** → xuất **ĐSĐS**  
-- **PHẦN 3:** đáp án theo dòng **`Đáp án: ...`** (sẽ bị xóa khỏi đề trộn)  
-- Sau khi trộn: **xóa toàn bộ gạch chân** trong PHẦN 1 & 2 để **không lộ đáp án**
-"""
-        )
-        st.markdown('<div class="hr"></div>', unsafe_allow_html=True)
-
-        st.subheader("Xuất file")
-        st.markdown(
-            """
-- Nhiều mã đề → tải **ZIP** gồm:
-  - `..._V101.docx`, `..._V102.docx`, ...
-  - `DAPAN_TONG_HOP.csv` (1 file duy nhất, Excel VN mở không lỗi)
+- **PHẦN 1:** đáp án đúng = **gạch chân** trong nội dung phương án (sau trộn sẽ bỏ gạch chân)  
+- **PHẦN 2:** gạch chân = **Đ**, không gạch chân = **S** → xuất **ĐSĐS** (sau trộn bỏ gạch chân)  
+- **PHẦN 3:** đọc `Đáp án: ...` rồi **xóa dòng đó** khỏi đề  
+- File đáp án xuất **XLSX** có merge tiêu đề nhóm, kẻ bảng đẹp
 """
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ================= RUN =================
     if run_btn:
         if not uploaded_file:
             st.error("⚠️ Thầy vui lòng chọn file .docx trước.")
             return
 
         try:
-            with st.spinner("⏳ Đang trộn đề, điền mã đề, tạo bảng đáp án..."):
+            with st.spinner("⏳ Đang trộn đề + điền mã đề + tạo XLSX đáp án..."):
                 file_bytes = uploaded_file.read()
                 base_name = uploaded_file.name.rsplit(".", 1)[0]
                 base_name = re.sub(r'[^\w\s-]', '', base_name).strip() or "De"
@@ -918,17 +960,9 @@ def main():
                 if num_versions == 1:
                     ma_de = 101
                     shuffled_bytes, answers_all = shuffle_docx(file_bytes, shuffle_mode, ma_de=ma_de)
-                    table_csv = build_answer_table_csv([answers_all], start_code=101, delimiter=";")
+                    xlsx_bytes = build_answer_table_xlsx([answers_all], start_code=101)
 
-                    st.markdown(
-                        """
-<div class="success-box">
-  <h3>✅ Hoàn tất!</h3>
-  <div class="small">Đã tạo đề V101 và bảng đáp án tổng hợp.</div>
-</div>
-""",
-                        unsafe_allow_html=True
-                    )
+                    st.success("✅ Hoàn tất! Đã tạo đề V101 và bảng đáp án XLSX.")
 
                     st.download_button(
                         label=f"📥 Tải xuống {base_name}_V101.docx",
@@ -937,27 +971,16 @@ def main():
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         use_container_width=True
                     )
-
                     st.download_button(
-                        label="📥 Tải xuống DAPAN_TONG_HOP.csv",
-                        data=table_csv.encode("utf-8-sig"),
-                        file_name="DAPAN_TONG_HOP.csv",
-                        mime="text/csv",
+                        label="📥 Tải xuống DAPAN_TONG_HOP.xlsx",
+                        data=xlsx_bytes,
+                        file_name="DAPAN_TONG_HOP.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True
                     )
-
                 else:
                     zip_bytes = create_zip_multiple(file_bytes, base_name, num_versions, shuffle_mode)
-
-                    st.markdown(
-                        """
-<div class="success-box">
-  <h3>✅ Hoàn tất!</h3>
-  <div class="small">Đã tạo nhiều mã đề và 1 file đáp án tổng hợp.</div>
-</div>
-""",
-                        unsafe_allow_html=True
-                    )
+                    st.success("✅ Hoàn tất! Đã tạo nhiều mã đề + 1 file đáp án XLSX.")
 
                     st.download_button(
                         label=f"📦 Tải xuống {base_name}_multi.zip",
@@ -973,7 +996,8 @@ def main():
     st.markdown(
         """
 <footer>
-  Nếu thầy muốn xuất <b>.xlsx</b> (có merge tiêu đề nhóm, border đẹp, căn giữa), nói “xlsx” là tôi nâng cấp ngay.
+  Tip: Nếu thầy muốn XLSX tự tô màu Top 1/2/3 hoặc tự đánh số cột theo “Câu 1..22” cố định (không phụ thuộc số câu từng phần),
+  nói tôi biết số câu mỗi phần là bao nhiêu.
 </footer>
 """,
         unsafe_allow_html=True
