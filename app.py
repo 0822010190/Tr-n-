@@ -20,7 +20,7 @@ from xml.dom import minidom
 # ==================== CẤU HÌNH TRANG ====================
 
 st.set_page_config(
-    page_title="Trộn Đề Word - AIOMT Premium",
+    page_title="Đảo Đề Word - Tuấn",
     page_icon="🎲",
     layout="centered",
     initial_sidebar_state="collapsed"
